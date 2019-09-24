@@ -19,7 +19,7 @@ var (
 func race(requestStartString string, requestEndString string) (ResultResponses, ErrorModel) {
 	var response ResultResponses
 	var errResponse ErrorModel
-	var res string
+	//var res string
 	wg := &sync.WaitGroup{}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -31,13 +31,11 @@ func race(requestStartString string, requestEndString string) (ResultResponses, 
 		log.Println("Validation Input String: ", requestStartString)
 		return nil, errResponse
 	}
+
 	defer wg.Done()
 	wg.Add(1)
-	res = searchTitles(ctx, requestStartString, requestEndString, requestStartString, 20)
-	defer wg.Done()
-	wg.Add(1)
-	res = searchTitles(ctx, requestStartString, requestEndString, requestStartString, 20)
-	fmt.Println("Terminating the application... completed ", res)
+	searchTitles(ctx, requestStartString, requestEndString, requestStartString, 20)
+	fmt.Println("Terminating the application... completed ")
 
 	cancel()
 	wg.Wait()
