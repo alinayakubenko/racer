@@ -1,4 +1,4 @@
-// TestAssgn project TestAssgn.go
+// TestAssgn project WikiRacer.go
 package main
 
 import (

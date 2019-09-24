@@ -1,27 +1,62 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-
 	"log"
 	"net/http"
+	"regexp"
+	"strings"
+	"sync"
 	"time"
 )
 
-func race(requestStartString string, requestEndString string) ResultResponses {
+var (
+	mutex = &sync.Mutex{}
+)
 
+func race(requestStartString string, requestEndString string) (ResultResponses, ErrorModel) {
 	var response ResultResponses
+	var errResponse ErrorModel
+	var res string
+	wg := &sync.WaitGroup{}
 
-	fmt.Println("test")
-	go searchTitles(requestStartString, requestEndString)
-	fmt.Println("Terminating the application...")
+	ctx, cancel := context.WithCancel(context.Background())
+	if m, _ := regexp.MatchString("^[a-zA-Z_ ]{1,50}$", requestStartString); !m {
 
-	return response
+		errResponse.Error = "Validation error!"
+
+		log.Println("Validation response: ", errResponse.Error)
+		log.Println("Validation Input String: ", requestStartString)
+		return nil, errResponse
+	}
+	defer wg.Done()
+	wg.Add(1)
+	res = searchTitles(ctx, requestStartString, requestEndString, requestStartString, 20)
+	defer wg.Done()
+	wg.Add(1)
+	res = searchTitles(ctx, requestStartString, requestEndString, requestStartString, 20)
+	fmt.Println("Terminating the application... completed ", res)
+
+	cancel()
+	wg.Wait()
+
+	return response, errResponse
 }
 
-func searchTitles(currentTitleSting string, endString string) {
+func searchTitles(ctx context.Context, currentTitleSting string, endString string, path string, maxDepth int) string {
 
+	if maxDepth == 0 {
+		return ""
+	} else {
+		maxDepth -= 1
+	}
+	select {
+	case <-ctx.Done():
+		return ""
+	default:
+	}
 	client := &http.Client{}
 	client.Timeout = time.Second * 15
 
@@ -42,16 +77,56 @@ func searchTitles(currentTitleSting string, endString string) {
 		q.Add("alnamespace", "0")
 
 		req.URL.RawQuery = q.Encode()
-		resp, _ := client.Do(req)
+		resp, err := client.Do(req)
 
 		if err != nil {
-			log.Fatalln(err)
+			log.Println("Unable to perform request!", err)
+			return ""
 		}
+		//log.Println(req.URL.String())
 
-		fmt.Println(req.URL.String())
 		var result map[string]interface{}
 		json.NewDecoder(resp.Body).Decode(&result)
+		var query map[string]interface{}
+		var pages map[string]interface{}
 
-		log.Println(result)
+		query, ok := result["query"].(map[string]interface{})
+		if ok {
+			pages, ok = query["pages"].(map[string]interface{})
+			if !ok {
+				return ""
+			}
+		} else {
+			return ""
+		}
+
+		pagesArr := make([]string, len(pages))
+		var index = 0
+		for key := range pages {
+			var title = pages[key].(map[string]interface{})["title"].(string)
+			pagesArr[index] = title
+			index++
+
+			if strings.ToLower(title) == strings.ToLower(endString) {
+				log.Println("found the end page!!! ", title)
+				path = path + " -> " + title
+				log.Println("path ", path)
+				ctx.Done()
+				return path
+			}
+		}
+
+		for _, item := range pagesArr {
+			select {
+			case <-ctx.Done():
+				return ""
+			default:
+			}
+
+			go searchTitles(ctx, item, endString, path+" -> "+item, maxDepth)
+			log.Println(len(pagesArr))
+		}
+
 	}
+	return ""
 }

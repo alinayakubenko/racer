@@ -1,4 +1,3 @@
-// TestAssgn project TestAssgn.go
 package main
 
 import (
@@ -9,7 +8,10 @@ func wikiRace(c *gin.Context) {
 	var request StartEndRequest
 
 	c.BindJSON(&request)
-	c.JSON(200, gin.H{
-		"message end": race(request.StartPage, request.EndPage),
-	})
+	resp, err := race(request.StartPage, request.EndPage)
+	if err.Error == "" {
+		c.JSON(200, gin.H{
+			"message end": resp,
+		})
+	}
 }

@@ -1,6 +1,6 @@
 package main
 
 type StartEndRequest struct {
-	StartPage string `json:"statrtPage"`
+	StartPage string `json:"startPage"`
 	EndPage   string `json:"endPage"`
 }
