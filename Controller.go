@@ -10,9 +10,14 @@ func wikiRace(c *gin.Context) {
 
 	c.BindJSON(&request)
 	resp, err := race(request.StartPage, request.EndPage)
-	if err.Error == "" {
-		c.JSON(200, gin.H{
-			"message end": resp,
-		})
+	// if err.Error == "" {
+	// 	c.JSON(200, gin.H{
+	// 		"message end": resp.Page,
+	// 	})
+
+	// }
+	c.JSON(200, resp)
+	if err.Error != "" {
+		return
 	}
 }

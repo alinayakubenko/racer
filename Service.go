@@ -24,36 +24,46 @@ see what's elese to improve
 */
 
 // Service contains the main logic for /wikirace endpoint
-var (
-	mutex = &sync.Mutex{}
-)
 
 // Method race that is called from the controller.
-func race(requestStartString string, requestEndString string) (ResultResponses, ErrorModel) {
-	var response ResultResponses
+func race(requestStartString string, requestEndString string) (ResultResponse, ErrorModel) {
+	var response ResultResponse
 	var errResponse ErrorModel
 	wg := &sync.WaitGroup{}
 	ch := make(chan string)
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// input validation. Will look how else to do it
 	if m, _ := regexp.MatchString("^[a-zA-Z_, ]{1,50}$", requestStartString); !m {
 
 		errResponse.Error = "Validation error!"
 
 		log.Println("Validation response: ", errResponse.Error)
 		log.Println("Validation Input String: ", requestStartString)
-		return nil, errResponse
+		return response, errResponse
+	}
+	if m1, _ := regexp.MatchString("^[a-zA-Z_, ]{1,50}$", requestEndString); !m1 {
+
+		errResponse.Error = "Validation error!"
+
+		log.Println("Validation response: ", errResponse.Error)
+		log.Println("Validation Input String: ", requestEndString)
+		return response, errResponse
 	}
 
 	defer wg.Done()
 	wg.Add(1)
-	searchTitles(ctx, ch, requestStartString, requestEndString, requestStartString, 20)
+	searchTitles(ctx, ch, requestStartString, requestEndString, requestStartString, 6)
 	fmt.Println("Start waiting for result from the channel: ")
 
 	log.Println("Channel log result: ", <-ch)
 
 	cancel()
 	wg.Wait()
-	//close(ch)
+	close(ch)
+	response.Page = ch
+	log.Println("Response log result: ", response.Page)
+
 	return response, errResponse
 }
 
@@ -150,12 +160,12 @@ func searchTitles(ctx context.Context, ch chan<- string, currentTitleSting strin
 		for _, item := range pagesArr {
 			select {
 			case <-ctx.Done():
-				log.Println("Context done event:  ", currentTitleSting)
+				//log.Println("Context done event:  ", currentTitleSting)
 				return ""
 			default:
 			}
 			go searchTitles(ctx, ch, item, endString, path+" -> "+item, maxDepth)
-			log.Println(len(pagesArr))
+			//log.Println(len(pagesArr))
 		}
 
 	}
