@@ -1,7 +1,8 @@
 package main
 
 type ResultResponse struct {
-	Page chan string `json:"page"`
+	Page  string `json:"page"`
+	Error string `json:"error"`
 }
 
 type ResultResponses []ResultResponse

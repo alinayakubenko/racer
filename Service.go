@@ -13,68 +13,66 @@ import (
 	"time"
 )
 
-/*
-TODO
-Fix the issue with timeout request,
-add tracking of visited pages,
-map and return the result,
-add unit tests,
-updated valiidation,
-see what's elese to improve
-*/
-
 // Service contains the main logic for /wikirace endpoint
 
 // Method race that is called from the controller.
-func race(requestStartString string, requestEndString string) (ResultResponse, ErrorModel) {
+
+var (
+	lock = sync.RWMutex{}
+)
+
+func race(requestStartString string, requestEndString string) ResultResponse {
 	var response ResultResponse
-	var errResponse ErrorModel
+	var visited = make(map[string]bool)
+
+	fmt.Println("test")
+	var res string
+	pool := make(chan int, 2)
+	res_chan := make(chan string)
 	wg := &sync.WaitGroup{}
-	ch := make(chan string)
+
+	response.Page = "null"
+	response.Error = "null"
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// input validation. Will look how else to do it
-	if m, _ := regexp.MatchString("^[a-zA-Z_, ]{1,50}$", requestStartString); !m {
-
-		errResponse.Error = "Validation error!"
-
-		log.Println("Validation response: ", errResponse.Error)
+	if m, _ := regexp.MatchString("^[a-zA-Z, ]{1,50}$", requestStartString); !m {
+		response.Error = "Validation failed for: " + requestStartString + ". String should contain no illigal characters and be no longer than 50 characters"
 		log.Println("Validation Input String: ", requestStartString)
-		return response, errResponse
+		return response
 	}
-	if m1, _ := regexp.MatchString("^[a-zA-Z_, ]{1,50}$", requestEndString); !m1 {
-
-		errResponse.Error = "Validation error!"
-
-		log.Println("Validation response: ", errResponse.Error)
+	if m1, _ := regexp.MatchString("^[a-zA-Z, ]{1,50}$", requestEndString); !m1 {
+		response.Error = "Validation failed for: " + requestEndString + ". String should contain no illigal characters and be no longer than 50 characters"
 		log.Println("Validation Input String: ", requestEndString)
-		return response, errResponse
+		return response
 	}
 
-	defer wg.Done()
-	wg.Add(1)
-	searchTitles(ctx, ch, requestStartString, requestEndString, requestStartString, 6)
-	fmt.Println("Start waiting for result from the channel: ")
+	res = searchTitles(pool, res_chan, ctx, requestStartString, requestEndString, requestStartString, visited, 7)
+	fmt.Println("Terminating the application... found ", res)
 
-	log.Println("Channel log result: ", <-ch)
-
+	res = <-res_chan
+	response.Page = res
+	log.Println("And the very final one is ", res)
 	cancel()
 	wg.Wait()
-	close(ch)
-	response.Page = ch
-	log.Println("Response log result: ", response.Page)
-
-	return response, errResponse
+	close(res_chan)
+	return response
 }
 
 // Method to perform searching using start and end strings from the request JSON
-func searchTitles(ctx context.Context, ch chan<- string, currentTitleSting string, endString string, path string, maxDepth int) string {
+func searchTitles(pool chan int, res_chan chan string, ctx context.Context, currentTitleSting string, endString string, path string, visitedMap map[string]bool, max int) string {
+	//Concurently writing the current title to the map of visited pages
+	lock.Lock()
+	defer lock.Unlock()
+	visitedMap[currentTitleSting] = true
 
-	if maxDepth == 0 {
+	if max == 0 {
 		return ""
 	} else {
-		maxDepth -= 1
+		max -= 1
 	}
+
 	select {
 	case <-ctx.Done():
 		return ""
@@ -93,9 +91,9 @@ func searchTitles(ctx context.Context, ch chan<- string, currentTitleSting strin
 
 	req, err := http.NewRequest("GET", "https://en.wikipedia.org/w/api.php", nil)
 	if err != nil {
-		fmt.Printf("The HTTP request failed with error %s\n", err)
+		log.Printf("The HTTP request failed with error %s\n", err)
 	} else {
-		// Forming the parametrized request to call the MediaWiki API
+
 		q := req.URL.Query()
 		q.Add("action", "query")
 		q.Add("format", "json")
@@ -108,15 +106,18 @@ func searchTitles(ctx context.Context, ch chan<- string, currentTitleSting strin
 		q.Add("alnamespace", "0")
 
 		req.URL.RawQuery = q.Encode()
+		//log.Println("before pool")
+		pool <- 1
+		//log.Println("inside pool")
 		// Perform the HTTP call
-		resp, err := client.Do(req)
+		resp, _ := client.Do(req)
 
 		if err != nil {
-			log.Println("Unable to perform request!", err)
-			return ""
+			log.Fatalln(err)
 		}
-		//log.Println(req.URL.String())
-		defer resp.Body.Close()
+		<-pool
+		//log.Println("after pool")
+
 		var result map[string]interface{}
 		json.NewDecoder(resp.Body).Decode(&result)
 
@@ -135,39 +136,39 @@ func searchTitles(ctx context.Context, ch chan<- string, currentTitleSting strin
 			return ""
 		}
 
-		pagesArr := make([]string, len(pages))
+		parr := make([]string, len(pages))
 		var index = 0
 		for key := range pages {
+
 			select {
 			case <-ctx.Done():
 				return ""
 			default:
 			}
 			var title = pages[key].(map[string]interface{})["title"].(string)
-			pagesArr[index] = title
-			index++
+			if !visitedMap[title] {
+				parr[index] = title
+				index++
 
-			if strings.ToLower(title) == strings.ToLower(endString) {
-				log.Println("found the end page!!! ", title)
-				path = path + " -> " + title
-				log.Println("path ", path)
-				ctx.Done()
-				ch <- path
-				return ""
+				if strings.ToLower(title) == strings.ToLower(endString) {
+					log.Println("found the end page!!! ", title)
+					path = path + " -> " + title
+					log.Println("path ", path)
+					res_chan <- path
+					return path
+				}
 			}
 		}
-
-		for _, item := range pagesArr {
+		for _, item := range parr {
 			select {
 			case <-ctx.Done():
-				//log.Println("Context done event:  ", currentTitleSting)
 				return ""
 			default:
 			}
-			go searchTitles(ctx, ch, item, endString, path+" -> "+item, maxDepth)
-			//log.Println(len(pagesArr))
-		}
+			log.Println(item)
+			go searchTitles(pool, res_chan, ctx, item, endString, path+" -> "+item, visitedMap, max)
 
+		}
 	}
 	return ""
 }
