@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"regexp"
@@ -21,11 +20,16 @@ var (
 	lock = sync.RWMutex{}
 )
 
+const (
+	TILE_TEXT  = "title"
+	QUERY_TEXT = "query"
+	PAGE_TEXT  = "pages"
+)
+
 func race(requestStartString string, requestEndString string) ResultResponse {
 	var response ResultResponse
 	var visited = make(map[string]bool)
 
-	fmt.Println("test")
 	var res string
 	pool := make(chan int, 2)
 	res_chan := make(chan string)
@@ -48,8 +52,8 @@ func race(requestStartString string, requestEndString string) ResultResponse {
 		return response
 	}
 
-	res = searchTitles(pool, res_chan, ctx, requestStartString, requestEndString, requestStartString, visited, 7)
-	fmt.Println("Terminating the application... found ", res)
+	res = searchTitles(pool, res_chan, ctx, requestStartString, requestEndString, requestStartString, visited, 60)
+	log.Println("Search started... ")
 
 	res = <-res_chan
 	response.Page = res
@@ -126,9 +130,9 @@ func searchTitles(pool chan int, res_chan chan string, ctx context.Context, curr
 		var pages map[string]interface{}
 
 		//Checking if the specific field exists before writing it
-		query, ok := result["query"].(map[string]interface{})
+		query, ok := result[QUERY_TEXT].(map[string]interface{})
 		if ok {
-			pages, ok = query["pages"].(map[string]interface{})
+			pages, ok = query[PAGE_TEXT].(map[string]interface{})
 			if !ok {
 				return ""
 			}
@@ -145,7 +149,7 @@ func searchTitles(pool chan int, res_chan chan string, ctx context.Context, curr
 				return ""
 			default:
 			}
-			var title = pages[key].(map[string]interface{})["title"].(string)
+			var title = pages[key].(map[string]interface{})[TILE_TEXT].(string)
 			if !visitedMap[title] {
 				parr[index] = title
 				index++
@@ -165,7 +169,7 @@ func searchTitles(pool chan int, res_chan chan string, ctx context.Context, curr
 				return ""
 			default:
 			}
-			log.Println(item)
+			//log.Println(item)
 			go searchTitles(pool, res_chan, ctx, item, endString, path+" -> "+item, visitedMap, max)
 
 		}
