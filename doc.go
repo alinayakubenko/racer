@@ -1,5 +1,3 @@
-// TestAssgn project doc.go
-
 /*
 TestAssgn document
 */

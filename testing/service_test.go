@@ -1,5 +1,7 @@
-package testing
+package main
 
 import "testing"
 
-func Test() {}
+func Test(t *testing.T) {
+
+}
