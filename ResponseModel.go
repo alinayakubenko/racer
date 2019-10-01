@@ -1,8 +1,8 @@
 package main
 
 type ResultResponse struct {
-	Page  string `json:"page"`
-	Error string `json:"error"`
+	Page  string `json:"path"`
+	Error string `json:"validationError"`
 }
 
 type ResultResponses []ResultResponse

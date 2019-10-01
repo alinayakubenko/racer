@@ -8,5 +8,5 @@ func main() {
 	//Entry point, configuring an endpoint and callin the controller method
 	r := gin.Default()
 	r.POST("/wikirace", wikiRace)
-	r.Run()
+	r.Run(":8081")
 }
