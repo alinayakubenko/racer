@@ -23,7 +23,7 @@ To let consumer perform the request, this application implemented as RESTful. Th
 ### Implementation
 ` `
 Diagram
-![]({{site.baseurl}}/wikiRacerAPI_Diagram.png)
+![](wikiRacerAPI_Diagram.png)
 ` `
 
 I chose Go because it was new to me and because it's presumably very suitable for tasks that require concurrency. Gin was chosen for its simplicity and speed. 
@@ -65,12 +65,12 @@ Body example:
 ### More examples:
 ` `
 
-![]({{site.baseurl}}/validation_error_message.png)
+![](validation_error_message.png)
 
 ` `
 
-![]({{site.baseurl}}/WikiRace_example1.png)
+![](WikiRace_example1.png)
 
 ` `
 
-![]({{site.baseurl}}/no_host_available_message.png)
+![](no_host_available_message.png)
