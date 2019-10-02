@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -29,24 +28,27 @@ const (
 
 func race(requestStartString string, requestEndString string) ResultResponse {
 	var response ResultResponse
+	//Map to record visited pages
 	var visited = make(map[string]bool)
 
 	var res string = ""
 	pool := make(chan int, 10)
 	res_chan := make(chan string)
 
+	//Setting default values to the response fields
 	response.Page = "null"
 	response.Error = "null"
 
 	ctx, cancel := context.WithCancel(context.Background())
-	//Call to input validation method
+
+	//Calling input validation method to verify the request body
 	if inputValidation(requestStartString).Error != "" {
 		return inputValidation(requestStartString)
 	} else if inputValidation(requestEndString).Error != "" {
 		return inputValidation(requestEndString)
 	}
 
-	res = searchTitles(pool, res_chan, ctx, requestStartString, requestEndString, requestStartString, visited, 60)
+	res = searchTitles(pool, res_chan, ctx, requestStartString, requestEndString, requestStartString, visited, 30)
 	log.Println("Search started... ")
 
 	res = <-res_chan
@@ -62,7 +64,7 @@ func race(requestStartString string, requestEndString string) ResultResponse {
 	return response
 }
 
-// Method to perform searching using start and end strings from the request JSON
+// Method to perform searching using start and end strings from the request JSON.
 func searchTitles(pool chan int, res_chan chan string, ctx context.Context, currentTitleSting string, endString string, path string, visitedMap map[string]bool, max int) string {
 	defer recoverRequest(ctx, res_chan, path)
 	//Concurently writing the current title to the map of visited pages
@@ -77,7 +79,7 @@ func searchTitles(pool chan int, res_chan chan string, ctx context.Context, curr
 	}
 
 	listenToCancel(ctx)
-
+	// HTTP client setup
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
@@ -88,6 +90,7 @@ func searchTitles(pool chan int, res_chan chan string, ctx context.Context, curr
 		Timeout:   15 * time.Second,
 	}
 
+	// Building the query to request data from MediaWiki API
 	req, err := http.NewRequest("GET", "https://en.wikipedia.org/w/api.php", nil)
 	if err != nil {
 		log.Printf("The HTTP request failed with error %s\n", err)
@@ -107,18 +110,18 @@ func searchTitles(pool chan int, res_chan chan string, ctx context.Context, curr
 		req.URL.RawQuery = q.Encode()
 		pool <- 1
 		// Perform the HTTP call
-		//listenToCancel(ctx)
+		// Need to add some retry functionality for to handle failed request
+		listenToCancel(ctx)
 		resp, _ := client.Do(req)
 
 		if err != nil {
 			log.Fatalln(err)
 		}
 		<-pool
-
+		// Mapping data
 		var result map[string]interface{}
-		//if resp != nil {
 		json.NewDecoder(resp.Body).Decode(&result)
-		//}
+
 		//Creating the variable to hold the map from the result
 		var query map[string]interface{}
 		var pages map[string]interface{}
@@ -165,6 +168,7 @@ func searchTitles(pool chan int, res_chan chan string, ctx context.Context, curr
 	return ""
 }
 
+// Method for recovering form the panic in case of failed http request. It then returns the current path and a message as a result.
 func recoverRequest(ctx context.Context, res_chan chan string, path string) {
 	if err := recover(); err != nil {
 		res_chan <- " Network error. Unfinished search! Current path: " + path
@@ -181,15 +185,4 @@ func listenToCancel(ctx context.Context) string {
 	default:
 	}
 	return ""
-}
-
-func inputValidation(inputString string) ResultResponse {
-	// input validation. Will need to look how else this could be done
-	response.Error = ""
-	if m, _ := regexp.MatchString("^[a-zA-Z, ]{1,50}$", inputString); !m {
-		response.Error = "Validation failed for: " + inputString + ". String should contain no illigal characters and be no longer than 50 characters"
-		log.Println("Validation Input String: ", inputString)
-		return response
-	}
-	return response
 }
