@@ -59,7 +59,7 @@ func race(requestStartString string, requestEndString string) ResultResponse {
 
 	log.Println("And the very final one is ", res)
 	cancel()
-	close(res_chan)
+	//close(res_chan)
 	return response
 }
 
@@ -67,6 +67,7 @@ func race(requestStartString string, requestEndString string) ResultResponse {
 
 func searchTitles(pool chan int, res_chan chan string, ctx context.Context, currentTitleSting string, endString string, path string, visitedMap map[string]bool, max int) string {
 	//Concurently writing the current title to the map of visited pages
+	defer recoverRequest(ctx, res_chan, path)
 	lock.Lock()
 	visitedMap[currentTitleSting] = true
 	lock.Unlock()
@@ -82,8 +83,99 @@ func searchTitles(pool chan int, res_chan chan string, ctx context.Context, curr
 		return ""
 	default:
 	}
+	// client := &http.Client{}
+	// client.Timeout = time.Second * 15
+	// // Building the query to request data from MediaWiki API
+	// req, err := http.NewRequest("GET", "https://en.wikipedia.org/w/api.php", nil)
+	// if err != nil {
+	// 	log.Printf("The HTTP request failed with error %s\n", err)
+	// } else {
+
+	// 	q := req.URL.Query()
+	// 	q.Add("action", "query")
+	// 	q.Add("format", "json")
+	// 	q.Add("titles", currentTitleSting)
+	// 	q.Add("generator", "links")
+	// 	q.Add("redirects", "")
+	// 	q.Add("gpllimit", "5000")
+	// 	q.Add("prop", "info")
+	// 	q.Add("inprop", "url")
+	// 	q.Add("alnamespace", "0")
+
+	// 	req.URL.RawQuery = q.Encode()
+	// 	// Perform the HTTP call
+	// 	pool <- 1
+	// 	select {
+	// 	case <-ctx.Done():
+	// 		return ""
+	// 	default:
+	// 	}
+	// 	resp, err := client.Do(req)
+
+	// 	if err != nil {
+	// 		log.Fatalln(err)
+	// 	}
+	// 	<-pool
+	// 	// Mapping data
+	// 	var result map[string]interface{}
+	// 	json.NewDecoder(resp.Body).Decode(&result)
+	var query map[string]interface{}
+	var pages map[string]interface{}
+	//Checking if the specific field exists before writing it
+	// Mapping data
+
+	var result map[string]interface{}
+	json.NewDecoder(queryTheTitle(pool, ctx, currentTitleSting, res_chan, path).Body).Decode(&result)
+	query, ok := result["query"].(map[string]interface{})
+	if ok {
+		pages, ok = query["pages"].(map[string]interface{})
+		if !ok {
+			return ""
+		}
+	} else {
+		return ""
+	}
+	parr := make([]string, len(pages))
+	var index = 0
+	for key := range pages {
+		select {
+		case <-ctx.Done():
+			return ""
+		default:
+		}
+		var title = pages[key].(map[string]interface{})["title"].(string)
+		parr[index] = title
+		index++
+		if strings.ToLower(title) == strings.ToLower(endString) {
+			log.Println("found the end page!!! ", title)
+			path = path + " -> " + title
+			log.Println("path ", path)
+			res_chan <- path
+			return path
+		}
+	}
+	for _, item := range parr {
+		select {
+		case <-ctx.Done():
+			return ""
+		default:
+		}
+		// log.Println(item)
+		lock.RLock()
+		if !visitedMap[item] {
+			go searchTitles(pool, res_chan, ctx, item, endString, path+" -> "+item, visitedMap, max)
+		}
+		lock.RUnlock()
+	}
+	//}
+	return ""
+}
+
+func queryTheTitle(pool chan int, ctx context.Context, currentTitleSting string, res_chan chan string, path string) *http.Response {
+	defer recoverRequest(ctx, res_chan, path)
 	client := &http.Client{}
 	client.Timeout = time.Second * 15
+	//var resp *http.Response
 	// Building the query to request data from MediaWiki API
 	req, err := http.NewRequest("GET", "https://en.wikipedia.org/w/api.php", nil)
 	if err != nil {
@@ -106,7 +198,7 @@ func searchTitles(pool chan int, res_chan chan string, ctx context.Context, curr
 		pool <- 1
 		select {
 		case <-ctx.Done():
-			return ""
+			return nil
 		default:
 		}
 		resp, err := client.Do(req)
@@ -115,53 +207,16 @@ func searchTitles(pool chan int, res_chan chan string, ctx context.Context, curr
 			log.Fatalln(err)
 		}
 		<-pool
-		// Mapping data
-		var result map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&result)
-		var query map[string]interface{}
-		var pages map[string]interface{}
-		//Checking if the specific field exists before writing it
-		query, ok := result["query"].(map[string]interface{})
-		if ok {
-			pages, ok = query["pages"].(map[string]interface{})
-			if !ok {
-				return ""
-			}
-		} else {
-			return ""
-		}
-		parr := make([]string, len(pages))
-		var index = 0
-		for key := range pages {
-			select {
-			case <-ctx.Done():
-				return ""
-			default:
-			}
-			var title = pages[key].(map[string]interface{})["title"].(string)
-			parr[index] = title
-			index++
-			if strings.ToLower(title) == strings.ToLower(endString) {
-				log.Println("found the end page!!! ", title)
-				path = path + " -> " + title
-				log.Println("path ", path)
-				res_chan <- path
-				return path
-			}
-		}
-		for _, item := range parr {
-			select {
-			case <-ctx.Done():
-				return ""
-			default:
-			}
-			// log.Println(item)
-			lock.RLock()
-			if !visitedMap[item] {
-				go searchTitles(pool, res_chan, ctx, item, endString, path+" -> "+item, visitedMap, max)
-			}
-			lock.RUnlock()
-		}
+		return resp
 	}
-	return ""
+	return nil
+}
+
+func recoverRequest(ctx context.Context, res_chan chan string, path string) {
+	if err := recover(); err != nil {
+		res_chan <- " Network error. Unfinished search! Current path: " + path
+		ctx.Done()
+		log.Println("recovered from ", err)
+		close(res_chan)
+	}
 }
