@@ -76,6 +76,9 @@ Body example:
 ![](docs_src/no_host_available_message.png)
 
 ` `
+Nex screenshot was taken before error codes are properly configured.
+` `
+
 ![](docs_src/no_host_available_message.png)
 
 ` `
